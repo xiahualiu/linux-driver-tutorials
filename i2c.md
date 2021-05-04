@@ -581,4 +581,7 @@ Reference list:
 1. https://www.kernel.org/doc/Documentation/i2c/writing-clients
 2. https://www.kernel.org/doc/Documentation/i2c/instantiating-devices
 3. https://www.kernel.org/doc/Documentation/i2c/dev-interface
-4. https://github.com/torvalds/linux/blob/master/drivers/pwm/pwm-pca9685.c
+4. https://github.com/torvalds/linux/blob/master/include/linux/i2c.h
+5. https://github.com/torvalds/linux/blob/master/drivers/pwm/pwm-pca9685.c
+6. https://github.com/torvalds/linux/blob/master/drivers/base/regmap/regmap.c
+7. https://github.com/torvalds/linux/blob/master/include/linux/regmap.h
