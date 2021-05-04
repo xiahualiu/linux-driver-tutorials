@@ -2,6 +2,8 @@
 
 This article will tell you how to write a i2c driver for an external device like PCA9685 or some sensors using i2c interface. This tutorial is based on the latest Linux kernel 5.x.x. However, the general structure is the same even in kenel 2.6.0, just some new features (`regmap pm_ops`) were not supported.
 
+This article only deliver the main concept of implementing i2c driver in Linux, please remember since Linux is fast developing every day, the structures and code in this article is not latest, please refer to the daily mainline Linux kernel [i2c source code](https://github.com/torvalds/linux/blob/master/include/linux/i2c.h) for reference.
+
 ### Build the driver structure
 
 First we need to provider the i2c driver with necessary information about the device, `probe` and `remove` routines, etc. For example:
@@ -56,7 +58,7 @@ The kernel will find `foo_driver` according to the name `foo` and use contained 
 
 If you read the code in the driver part you will notice there is no operation methods like read and write. This is because a driver structure only contains general access routines (through some callback functions). It is used for the kernel to manage the device at certain events like shutdown, sleep, or device is removed. 
 
-The client structure contains all the information of the slave device, like shown below, code is cut from the linux mainline [i2c driver source code](https://github.com/torvalds/linux/blob/master/include/linux/i2c.h#L298):
+When a i2c device is connected on the bus, a `i2c_client` structure needs to be instantiated. The client structure contains all the information of the slave device, like shown below, code is cut from the linux mainline [i2c driver source code](https://github.com/torvalds/linux/blob/master/include/linux/i2c.h#L298):
 
 ```c
 /**
@@ -107,7 +109,7 @@ struct i2c_client {
 };
 ```
 
-
+Unlike other device driver, i2c client does not contain the ops for the device. Instead there are 
 
 
 #### Extra client data
@@ -122,8 +124,171 @@ void i2c_set_clientdata(struct i2c_client *client, void *data);
 void *i2c_get_clientdata(const struct i2c_client *client);
 ```
 
-The i2c client structure is different from the driver structure, you probably want it
+Please be care that i2c client structure DOES NOT HAVE any ops assiociated with the device, instead, linux has i2c stack implement already and we just need to call from these methods to communicate, these ops are:
 
+#### Plain i2c communication
+
+```c
+int i2c_master_send(struct i2c_client *client, const char *buf,
+			    int count);
+int i2c_master_recv(struct i2c_client *client, char *buf, int count);
+
+int i2c_transfer(struct i2c_adapter *adap, struct i2c_msg *msg,
+			 int num);
+```
+
+These methods are not prefered if the device supports the following `SMBus` ops.
+
+#### SMBus communication
+
+```c
+s32 i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr,
+			unsigned short flags, char read_write, u8 command,
+			int size, union i2c_smbus_data *data);
+```
+
+This is the generic SMBus function. All functions below are implemented
+in terms of it. Never use this function directly!
+
+```c
+s32 i2c_smbus_read_byte(struct i2c_client *client);
+s32 i2c_smbus_write_byte(struct i2c_client *client, u8 value);
+s32 i2c_smbus_read_byte_data(struct i2c_client *client, u8 command);
+s32 i2c_smbus_write_byte_data(struct i2c_client *client,
+				u8 command, u8 value);
+s32 i2c_smbus_read_word_data(struct i2c_client *client, u8 command);
+s32 i2c_smbus_write_word_data(struct i2c_client *client,
+				u8 command, u16 value);
+s32 i2c_smbus_read_block_data(struct i2c_client *client,
+				u8 command, u8 *values);
+s32 i2c_smbus_write_block_data(struct i2c_client *client,
+				u8 command, u8 length, const u8 *values);
+s32 i2c_smbus_read_i2c_block_data(struct i2c_client *client,
+				u8 command, u8 length, u8 *values);
+s32 i2c_smbus_write_i2c_block_data(struct i2c_client *client,
+				u8 command, u8 length,
+				const u8 *values);
+```
+
+These ones were removed from i2c-core because they had no users, but could
+be added back later if needed:
+
+```c
+s32 i2c_smbus_write_quick(struct i2c_client *client, u8 value);
+s32 i2c_smbus_process_call(struct i2c_client *client,
+			u8 command, u16 value);
+s32 i2c_smbus_block_process_call(struct i2c_client *client,
+			u8 command, u8 length, u8 *values);
+```
+
+All these transactions return a negative errno value on failure. The 'write'
+transactions return 0 on success; the 'read' transactions return the read
+value, except for block transactions, which return the number of values
+read. The block buffers need not be longer than 32 bytes.
+
+You can read the file `smbus-protocol' for more information about the
+actual SMBus protocol.
+
+### Other important structures
+
+So now you see the i2c client and the i2c driver structures, there are other 2 structures in Linux kernel that are very important. They are, at most time, irrelavent in the code design because they take care of the i2c infrastures like the adapters. We will talk about it here briefly:
+
+#### `i2c_adapter` structure
+
+```c
+/*
+ * i2c_adapter is the structure used to identify a physical i2c bus along
+ * with the access algorithms necessary to access it.
+ */
+struct i2c_adapter {
+	struct module *owner;
+	unsigned int class;		  /* classes to allow probing for */
+	const struct i2c_algorithm *algo; /* the algorithm to access the bus */
+	void *algo_data;
+
+	/* data fields that are valid for all devices	*/
+	const struct i2c_lock_operations *lock_ops;
+	struct rt_mutex bus_lock;
+	struct rt_mutex mux_lock;
+
+	int timeout;			/* in jiffies */
+	int retries;
+	struct device dev;		/* the adapter device */
+	unsigned long locked_flags;	/* owned by the I2C core */
+#define I2C_ALF_IS_SUSPENDED		0
+#define I2C_ALF_SUSPEND_REPORTED	1
+
+	int nr;
+	char name[48];
+	struct completion dev_released;
+
+	struct mutex userspace_clients_lock;
+	struct list_head userspace_clients;
+
+	struct i2c_bus_recovery_info *bus_recovery_info;
+	const struct i2c_adapter_quirks *quirks;
+
+	struct irq_domain *host_notify_domain;
+};
+#define to_i2c_adapter(d) container_of(d, struct i2c_adapter, dev)
+```
+
+Further information can be found at [linux/i2c.h](https://github.com/torvalds/linux/blob/master/include/linux/i2c.h)
+
+#### `i2c_algorithm` structure
+
+```c
+struct i2c_algorithm {
+	/*
+	 * If an adapter algorithm can't do I2C-level access, set master_xfer
+	 * to NULL. If an adapter algorithm can do SMBus access, set
+	 * smbus_xfer. If set to NULL, the SMBus protocol is simulated
+	 * using common I2C messages.
+	 *
+	 * master_xfer should return the number of messages successfully
+	 * processed, or a negative value on error
+	 */
+	int (*master_xfer)(struct i2c_adapter *adap, struct i2c_msg *msgs,
+			   int num);
+	int (*master_xfer_atomic)(struct i2c_adapter *adap,
+				   struct i2c_msg *msgs, int num);
+	int (*smbus_xfer)(struct i2c_adapter *adap, u16 addr,
+			  unsigned short flags, char read_write,
+			  u8 command, int size, union i2c_smbus_data *data);
+	int (*smbus_xfer_atomic)(struct i2c_adapter *adap, u16 addr,
+				 unsigned short flags, char read_write,
+				 u8 command, int size, union i2c_smbus_data *data);
+
+	/* To determine what the adapter supports */
+	u32 (*functionality)(struct i2c_adapter *adap);
+
+#if IS_ENABLED(CONFIG_I2C_SLAVE)
+	int (*reg_slave)(struct i2c_client *client);
+	int (*unreg_slave)(struct i2c_client *client);
+#endif
+};
+```
+
+Further information can be found at [linux/i2c.h](https://github.com/torvalds/linux/blob/master/include/linux/i2c.h)
+
+### How to instantiate a `i2c_client` structure
+
+After understanding all the structures above, you may have a faint concept of their relationship and now we are going to write some code. In order to communicate a i2c device on the bus, you need to instantiate the `i2c_client` structure first. This step however can be done in 4 different ways. Reference: [How to instantiate I2C devices](https://www.kernel.org/doc/Documentation/i2c/instantiating-devices)
+
+* Method 1a: Declare the I2C devices by bus number
+* Method 1b: Declare the I2C devices via devicetree
+* Method 1c: Declare the I2C devices via ACPI
+* Method 2: Instantiate the devices explicitly
+* Method 3: Probe an I2C bus for certain devices (should be avoided)
+* Method 4: Instantiate from user-space (should be avoided)
+
+After you instantiate the `i2c_client`, you are free to use the i2c/smbus communication methods above. If a device supports smbus protocol, it is always better than using the plain i2c communication methods.
+
+## Accessing i2c from user space
+
+You may want to write an user space i2c driver code, however it is not prefered. If you want to understand what is the difference between a kernel driver and a user space driver, check LDD3 [this chapter](https://static.lwn.net/images/pdf/LDD3/ch02.pdf) at page 37.
+
+In general, a kernel driver always performs better than a user space driver. However, in case some people want it, here is a brief introduction of [how to access i2c device from userspace](https://www.kernel.org/doc/Documentation/i2c/dev-interface). It is pretty straight forward with a very good example.
 
 Reference list:
 
