@@ -288,7 +288,7 @@ After you instantiate the `i2c_client`, you are free to use the i2c/smbus commun
 
 ## Accessing i2c from user space
 
-You may want to write an user space i2c driver code, however it is not prefered. If you want to understand what is the difference between a kernel driver and a user space driver, check LDD3 [this chapter](https://static.lwn.net/images/pdf/LDD3/ch02.pdf) at page 37.
+You may want to write an user space i2c driver code, however it is not prefered. If you want to understand what is the difference between a kernel driver and a user space driver, check LDD3 [Chapter 2](https://static.lwn.net/images/pdf/LDD3/ch02.pdf) at page 37.
 
 In general, a kernel driver always performs better than a user space driver. However, in case some people want it, here is a brief introduction of [how to access i2c device from userspace](https://www.kernel.org/doc/Documentation/i2c/dev-interface). It is pretty straight forward with a very good example.
 
