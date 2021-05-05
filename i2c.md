@@ -2,7 +2,7 @@
 
 This article will tell you how to write a i2c driver for an external device like PCA9685 or some sensors using i2c interface. This tutorial is based on the latest Linux kernel 5.x.x. However, the general structure is the same even in kenel 2.6.0, just some new features (`regmap pm_ops`) were not supported.
 
-This article only deliver the main concept of implementing i2c driver in Linux, please remember since Linux is fast developing every day, the structures and code in this article is not latest, please refer to the daily mainline Linux kernel [i2c source code](https://github.com/torvalds/linux/blob/master/include/linux/i2c.h) for reference.
+This article only delivers the main concept of implementing i2c driver in Linux, please remember since Linux is fast developing every day, the structures and code in this article are not latest, please refer to the daily mainline Linux kernel [i2c source code](https://github.com/torvalds/linux/blob/master/include/linux/i2c.h) for reference.
 
 There are two ways of implementing a i2c driver in Linux, we will talk about the kernel driver first, then the user space driver.
 
@@ -40,7 +40,7 @@ static struct i2c_driver foo_driver = {
 	.detect		= foo_detect,
 	.address_list	= normal_i2c,
   
-	.shutdown	= foo_shutdown,	/* Callback when computer shutdown or reboot */
+	.shutdown	= foo_shutdown,	/* shutdown or reboot */
 	.command	= foo_command,	/* optional, deprecated */
 }
 ```
@@ -111,7 +111,7 @@ struct i2c_client {
 };
 ```
 
-Unlike other device driver, i2c client does not contain the ops for the device. Instead there are 
+Unlike other device driver, i2c client does not contain the ops for the device. Ops are stored in a `i2c_algorithm` structure.
 
 
 #### Extra client data
@@ -126,7 +126,7 @@ void i2c_set_clientdata(struct i2c_client *client, void *data);
 void *i2c_get_clientdata(const struct i2c_client *client);
 ```
 
-Please be care that i2c client structure DOES NOT HAVE any ops assiociated with the device, instead, linux has i2c stack implement already and we just need to call from these methods to communicate, these ops are:
+Please be care that i2c client structure DOES NOT HAVE any ops assiociated with the device, instead, linux iteself had i2c stack implemented already (in `struct i2c_algorithm`) and we just need to call from these methods to communicate, these ops are:
 
 #### Plain i2c communication
 
@@ -286,15 +286,11 @@ After understanding all the structures above, you may have a faint concept of th
 
 After you instantiate the `i2c_client`, you are free to use the i2c/smbus communication methods above. If a device supports smbus protocol, it is always better than using the plain i2c communication methods.
 
-## Accessing i2c from user space
 
-You may want to write an user space i2c driver code, however it is not prefered. If you want to understand what is the difference between a kernel driver and a user space driver, check LDD3 [Chapter 2](https://static.lwn.net/images/pdf/LDD3/ch02.pdf) at page 37.
-
-In general, a kernel driver always performs better than a user space driver. However, in case some people want it, here is a brief introduction of [how to access i2c device from userspace](https://www.kernel.org/doc/Documentation/i2c/dev-interface). It is pretty straight forward with a very good example.
 
 ## Using `regmap` to access i2c device
 
-If you are familiar with i2c protocol you may notice that a lot of the i2c operations are based on the register reading and writing. So if you are dealing with such a device, there is a new feature after Linux kernel version 3.1 called `regmap`. It abstracts the registers on the i2c device, so you can read and write via memory address like operating on a normal memory segments. 
+If you are familiar with the i2c protocol you may notice that a lot of the i2c operations are based on the register reading and writing. So if you are dealing with such a device, there is a new feature after Linux kernel version 3.1 called `regmap`. It abstracts the registers on the i2c device, so you can read and write via memory address like operating on a normal memory segments. 
 
 `regmap` is very useful in i2c and spi communication methods, it provides a high level abstraction and data buffering mechanism for i2c communication. 
 
@@ -484,7 +480,7 @@ struct regmap_config {
 };
 ```
 
-You may say WOW! That's too much. However, we do not need to fill this structure ourself for the most case, there are already a lot macros let us to fill the structure in one line. Like `devm_regmap_init_i2c` in [`pwm-pca9685.c`](https://github.com/torvalds/linux/blob/master/drivers/pwm/pwm-pca9685.c#L457), we only need to fill part of it and the rest will be filled using these marcos.
+You may say WOW! That's too much. However, we do not need to fill this structure ourself for the most case, we can use `devm_regmap_init_i2c` marco, such as in [`pwm-pca9685.c`](https://github.com/torvalds/linux/blob/master/drivers/pwm/pwm-pca9685.c#L457), we only need to fill part of it and the rest will be filled using these marcos.
 
 ```c
 /* Code segment from pwm-pca9685.c */
@@ -574,6 +570,12 @@ int regmap_write(struct regmap *map, unsigned int reg, unsigned int val)
 	return ret;
 }
 ```
+
+## Accessing i2c from user space
+
+You may want to write an user space i2c driver code, however it is not prefered. If you want to understand what is the difference between a kernel driver and a user space driver, check LDD3 [Chapter 2](https://static.lwn.net/images/pdf/LDD3/ch02.pdf) at page 37.
+
+In general, a kernel driver always performs better than a user space driver. However, in case some people want it, here is a brief introduction of [how to access i2c device from userspace](https://www.kernel.org/doc/Documentation/i2c/dev-interface). It is pretty straight forward with a very good example.
 
 
 Reference list:
